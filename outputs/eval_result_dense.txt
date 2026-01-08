@@ -1,0 +1,21 @@
+Evaluating results from outputs/dense_results.json...
+
+Evaluation Scores:
+[
+    {
+        "NDCG@10": 0.64508,
+        "NDCG@100": 0.67665
+    },
+    {
+        "MAP@10": 0.59593,
+        "MAP@100": 0.60307
+    },
+    {
+        "Recall@10": 0.78333,
+        "Recall@100": 0.925
+    },
+    {
+        "P@10": 0.08833,
+        "P@100": 0.01053
+    }
+]

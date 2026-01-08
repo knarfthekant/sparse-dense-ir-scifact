@@ -7,134 +7,95 @@ This project implements and evaluates two classic Information Retrieval (IR) app
 
 The goal is to compare retrieval quality and practical trade-offs (speed, memory, indexing time).
 
+This project uses PyTorch with CUDA 12.8+ (CU120 support)
+for GPU execution.
+
 ## Project Structure
 
 ```
 .
-├── scripts/
-│   ├── download_data.py        # downloads SciFact from BEIR
-│   ├── bm25_retriever.py       # builds BM25 index + retrieves top-k
-│   ├── dense_retriever.py      # builds embeddings + FAISS index + retrieves top-k
-│   ├── evaluate.py             # evaluates run files using BEIR metrics
-│   └── utils.py                # shared helpers (I/O, tokenization, etc.)
+├── datasets/     # SciFact Dataset
+├── src/
+│   ├── download_data.ipynb        # downloads SciFact from BEIR
+│   ├── bm25_retriever.ipynb     # builds BM25 index + retrieves top-k
+│   ├── dense_retriever.ipynb      # builds embeddings + FAISS index + retrieves top-k
+│   └── evaluate.py             # evaluates run files using BEIR metrics
 ├── outputs/
-│   ├── bm25_run.json           # retrieval results for BM25
-│   ├── dense_run.json          # retrieval results for Dense retriever
-│   └── metrics.json            # saved evaluation metrics
+│   ├── dense_results.json           # retrieval results for BM25
+│   ├── sparse_results.json          # retrieval results for Dense 
+│   └── eval_result_*.txt            # saved evaluation metrics
 ├── requirements.txt
 └── README.md
 ```
 
-> `outputs/` is generated after running the pipeline.
+> `outputs/` is generated after running the scripts.
 
 
-## Requirements
+## Core Requirements
 
 - Python 3.9+ (recommended)
 - `beir` (dataset download + evaluation)
 - `rank-bm25` (BM25 implementation)
 - `sentence-transformers` (dense embeddings)
-- `faiss-cpu` or `faiss-gpu` (vector similarity search)
+- `faiss-cpu`
 
 All dependencies are listed in `requirements.txt`.
 
 
 ## Setup
 
-### 1) Create a virtual environment (recommended)
+### 1) Create a virtual environment (conda)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # macOS/Linux
-# .venv\\Scripts\\activate  # Windows
+conda create -n sdis python=3.12
+conda activate sdis
 ```
 
 ### 2) Install dependencies
 
 ```bash
 pip install -r requirements.txt
+pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
 ```
-
 
 ## Running the Project
 
 ### Step A — Download SciFact (BEIR)
 
-```bash
-python scripts/download_data.py --dataset scifact --out_dir data/
-```
-
+Run the ipynb `download_data.ipynb`
 This creates `data/scifact/` containing the corpus, queries, and qrels.
 
 ### Step B — BM25 retrieval (Sparse)
 
-```bash
-python scripts/bm25_retriever.py \
-  --data_dir data/scifact \
-  --top_k 100 \
-  --output outputs/bm25_run.json
-```
+Run the ipynb `bm25_retriever.ipynb`
 
 ### Step C — Dense retrieval (Sentence-Transformers + FAISS)
 
-```bash
-python scripts/dense_retriever.py \
-  --data_dir data/scifact \
-  --model sentence-transformers/all-MiniLM-L6-v2 \
-  --top_k 100 \
-  --output outputs/dense_run.json
-```
-
-You can swap the model (often higher quality but slower/larger), e.g.:
-
-- `sentence-transformers/all-mpnet-base-v2`
+Run the ipynb `dense_retriever.ipynb`
 
 ### Step D — Evaluate both runs
 
 ```bash
-python scripts/evaluate.py \
-  --data_dir data/scifact \
-  --bm25_run outputs/bm25_run.json \
-  --dense_run outputs/dense_run.json \
-  --output outputs/metrics.json
+python src/evaluate.py \
+  datasets/scifact \
+  outputs/dense_results.json
+
+python src/evaluate.py \
+  datasets/scifact \
+  outputs/sparse_results.json
 ```
 
-This prints and saves BEIR-style metrics (commonly `nDCG@k`, `Recall@k`, and optionally `MAP@k`, depending on your evaluator settings).
+This prints and saves BEIR-style metrics.
 
 ## Results and Discussion
+Metric | Sparse (BM25) | Dense (all-MiniLM-L6-v2) | Improvement
+----- | ----- | ----- | -----
+nDCG@10 | 0.5597 | 0.6451 | +15.3%
+Recall@100 | 0.7929 | 0.9250 | +16.7%
+MAP@10 | 0.5147 | 0.5959 | +15.8%
 
-After you run evaluation, paste your numbers into the table below and summarize what you observed.
-
-| Method | nDCG@10 | Recall@100 | Notes |
-|-------:|:-------:|:----------:|------|
-| BM25 (Sparse) | _TBD_ | _TBD_ | Fast + strong lexical matching |
-| Dense (ST + FAISS) | _TBD_ | _TBD_ | Better semantic matching; more compute/memory |
 
 ### Which retriever performed better?
-
-- **Observed winner:** _TBD_
-
-In your explanation, connect performance to the task:
-- **Dense can win** when queries and relevant documents use different wording (synonyms/paraphrases), because embeddings capture semantic similarity.
-- **BM25 can win** in scientific text when exact terminology and entity overlap are critical, since term matching is very strong and reliable.
-
-### Trade-offs observed (quality vs speed vs memory)
-
-**BM25 (Sparse)**
-- ✅ Very fast indexing and retrieval on CPU
-- ✅ Lower memory usage than storing dense vectors
-- ❌ Limited semantic generalization (misses paraphrases)
-
-**Dense (Sentence-Transformers + FAISS)**
-- ✅ Strong semantic retrieval (paraphrases, related phrasing)
-- ✅ FAISS enables efficient top-k similarity search
-- ❌ One-time embedding cost can be slow (corpus encoding)
-- ❌ Higher memory footprint (stores dense vectors)
-
-
-## Reproducibility Notes
-
-- Use the same `top_k` for both systems when comparing.
-- Keep preprocessing consistent (tokenization / text fields) to ensure a fair comparison.
-- If reporting speed, include your machine specs (CPU/GPU, RAM) and whether you used `faiss-cpu` or `faiss-gpu`.
-
+- The Dense Retriever performs better for this task. It achieved a much higher Recall@100 (92.5%), meaning that for nearly every query, the correct evidence was successfully retrieved within the top 100 results. Its nDCG@10 score of 0.6451 also indicates that it is much more effective at ranking the most relevant documents at the very top of the list compared to BM25.
+- I believe in this specific task (scientific facts), dense retriever performs better because the query and the corpus may be using different terminologies. The transformer based model embeds these different vocabularies into similar vector space because they share the same context, which would do a better job than keyword based ranking and matching.
+- While Dense Retriever provides much higher quality, it is often slower than sparse retriever. In large production environment, a hybrid approach (sparse + dense) may be used to balance performance and speed.
